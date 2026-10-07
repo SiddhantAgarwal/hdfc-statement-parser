@@ -1,0 +1,5 @@
+{
+  "_comment": "Merchant alias overrides. Copy to data/merchants.json (gitignored) and fill with YOUR merchants. A description containing a key (case-insensitive substring match) is pinned to the category before Clef is consulted - use only for merchants whose category cannot be inferred from the statement text (truncated names, payment-gateway prefixes, ambiguous brands). Keys starting with '_' are comments. The entries below are illustrative placeholders; replace them with real ones from your statements.",
+  "EXAMPLE TRUNCATED HOTEL NAM": "travel",
+  "EXAMPLE AMBIGUOUS COMMUNICAT": "utilities"
+}

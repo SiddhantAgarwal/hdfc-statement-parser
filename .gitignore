@@ -1,0 +1,22 @@
+# personal data — never commit
+*.pdf
+data/config.json
+data/merchants.json
+data/eval.jsonl
+data/categories.json
+PLAN.md
+
+# parser output (contains your transactions)
+*.parsed.json
+*.parsed.csv
+*_summary.json
+
+# python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# editors / os
+.idea/
+.DS_Store

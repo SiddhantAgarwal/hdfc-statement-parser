@@ -1,0 +1,21 @@
+{
+  "ollama_base_url": "http://localhost:11434",
+  "model": "clef-flash",
+  "keep_alive": "30m",
+  "request_timeout_s": 120.0,
+  "confidence_threshold": 0.6,
+  "categories": [
+    "groceries",
+    "dining",
+    "fuel",
+    "travel",
+    "utilities",
+    "shopping",
+    "entertainment",
+    "health",
+    "emi",
+    "fees",
+    "cash",
+    "other"
+  ]
+}

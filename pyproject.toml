@@ -1,0 +1,37 @@
+[project]
+name = "hdfc-statement-parser"
+version = "0.1.0"
+description = "Parse redacted HDFC credit card statement PDFs into structured transactions, classified locally by Ollama's Clef decision model."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pymupdf>=1.24",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+hdfc-parser = "hdfc_parser.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hdfc_parser"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "pytest>=8.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

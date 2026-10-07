@@ -1,0 +1,16 @@
+{
+  "_comment": "Category descriptions for Clef classification — TEMPLATE. Copy to data/categories.json (gitignored) and tune for your merchants. Ordered name -> description; the order matters (Clef breaks ties by option order, so keep specific categories first and 'other' last). The description is the model's ONLY definition of the category, so include merchant examples from YOUR statements. Keys starting with '_' are comments. The descriptions below are generic starting points.",
+  "groceries": "Supermarkets and grocery purchases, including online grocery orders and quick-commerce grocery delivery, even when the charge comes through a payment gateway or commerce platform with a prefix like RSP* or PAY* (BigBasket, Blinkit, Zepto, DMart, JioMart)",
+  "dining": "Restaurants, food delivery, cafes, cloud kitchens, bakeries, hotel restaurants and hospitality food outlets (Swiggy, Zomato, Starbucks, Domino's)",
+  "fuel": "Petrol, diesel, CNG at fuel stations and EV charging networks (Indian Oil, HP, recharge payments)",
+  "travel": "Airlines, railways, hotels, cabs, ride-hailing, bus bookings, tolls, passport/visa fees (IRCTC, Uber, Ola, MakeMyTrip)",
+  "utilities": "Electricity, water, gas pipeline, broadband, mobile postpaid, DTH, municipal bills, and home services booked through apps like cleaning, plumbing, electrical repairs, pest control (Urban Company/UrbanClap, Local)",
+  "shopping": "E-commerce and retail purchases of goods, electronics, clothing, home items (Amazon, Flipkart, Myntra, Croma)",
+  "entertainment": "Movies, streaming subscriptions, games, events, concerts (BookMyShow, Netflix, Spotify, Steam)",
+  "health": "Pharmacies, hospitals, clinics, diagnostic labs, health insurance premiums (Apollo, PharmEasy, 1mg, Practo)",
+  "beauty": "Salons, spas, haircuts, skin care and personal grooming services (Lakme Salon, Naturals, local salons)",
+  "emi": "EMI instalments, merchant EMI conversions, no-cost EMI bookings, flexi-pay or instalment plans",
+  "fees": "Bank charges: annual fee, late payment fee, interest and finance charges, GST on fees, over-limit fee, cash advance fee",
+  "cash": "ATM cash withdrawals and cash advances on the card",
+  "other": "None of the spending categories apply, including credit card bill payments (a payment toward the card itself, not a purchase), reward-points purchases, and anything that is clearly not spending on goods or services"
+}

@@ -1,0 +1,5 @@
+{"description": "PAY*SWIGGYBENGALURU", "amount": 432.50, "cr_dr": "DR", "expected_category": "dining", "note": "example entry - replace all entries with descriptions from your own statements"}
+{"description": "BLINKITGURGAON", "amount": 261.00, "cr_dr": "DR", "expected_category": "groceries", "note": ""}
+{"description": "OFFUS EMI,PRIN NB:01,00000123456789 (Ref# 099999999999999999999999)", "amount": 1234.56, "cr_dr": "DR", "expected_category": "emi", "note": "EMI principal instalment"}
+{"description": "ATM CASH WITHDRAWAL", "amount": 5000.00, "cr_dr": "DR", "expected_category": "cash", "note": ""}
+{"description": "IGST-VPS1234567890123-RATE 18.0 -29 (Ref# 099999999999999999999999)", "amount": 89.76, "cr_dr": "DR", "expected_category": "fees", "note": "GST on fees"}
