@@ -174,13 +174,28 @@ def _load_eval() -> list[dict]:
 class TestMerchantOverrides:
     """Offline tests for the merchants.json deterministic override layer."""
 
-    def test_load_overrides_skips_comment_keys(self):
-        overrides = classify.load_merchant_overrides()
-        assert overrides, "merchants.json should load at least one override"
-        assert all(not needle.startswith("_") for needle, _ in overrides)
-        assert all(
-            cat in TAXONOMY for _, cat in overrides
-        ), "every override category must be in the taxonomy"
+    def test_load_overrides_skips_comment_keys(self, tmp_path):
+        # hermetic: data/merchants.json is gitignored personal data, so a
+        # fresh clone (and CI) never sees it — load a synthetic file instead
+        merchants = tmp_path / "merchants.json"
+        merchants.write_text(
+            json.dumps(
+                {
+                    "_comment": "metadata key, not an override",
+                    "Example Cinemas": "entertainment",
+                    "EXAMPLE FUEL BUNK": "fuel",
+                }
+            )
+        )
+        overrides = classify.load_merchant_overrides(merchants)
+        assert overrides == [
+            ("example cinemas", "entertainment"),
+            ("example fuel bunk", "fuel"),
+        ]
+
+    def test_missing_file_loads_empty(self, tmp_path):
+        # fresh-clone behavior: no merchants.json means no overrides
+        assert classify.load_merchant_overrides(tmp_path / "absent.json") == []
 
     def test_override_matches_case_insensitive_substring(self):
         overrides = [("example cinemas", "entertainment")]
