@@ -1,24 +1,17 @@
 """Stages 0-2: validate input, extract words, build transaction rows.
 
-Two statement layouts are recognised:
+A template-registry-driven engine: each HDFC statement family is
+described by a TemplateSpec in hdfc_parser.templates (infinia, legacy,
+...). Per page, the engine matches the spec whose header labels it
+finds, derives column x-boundaries from the header row, and bands rows
+by the y of each row's date word - this reconstructs rows correctly even
+when the PDF emits text column-major (all dates in one block, all
+descriptions in another), and folds wrapped multi-line descriptions into
+their transaction.
 
-- "infinia": HDFC's current template - a table headed
-  "DATE & TIME / TRANSACTION DESCRIPTION / REWARDS / AMOUNT / PI"
-  (Infinia-class cards). Amounts carry the rupee glyph rendered as "C"
-  with Indian digit grouping (C 1,35,372.00); credits are prefixed "+"
-  (e.g. "+ C 37.96"); there is no CR/DR column and no posting date.
-- "legacy": the "Transaction Date / Posting Date / Description / Amount"
-  layout this parser was originally sketched against.
-
-Both are parsed column-aware: the header labels' x-positions define column
-regions, and rows are banded by the y of each row's date word. This
-reconstructs rows correctly even when the PDF emits text column-major
-(all dates in one block, all descriptions in another), and folds wrapped
-multi-line descriptions into their transaction.
-
-Pages with no recognised header fall back to reading-order row clustering.
-Extraction is fully deterministic - Clef never extracts fields, it only
-makes decisions on rows we've already built.
+Pages with no recognised header fall back to reading-order row
+clustering. Extraction is fully deterministic - Clef never extracts
+fields, it only makes decisions on rows we've already built.
 """
 
 import re
@@ -30,6 +23,7 @@ from hdfc_parser.config_loader import (
     REDACTOR_REGEX_PATTERNS,
     load_redaction_needles,
 )
+from hdfc_parser.templates import REGISTRY, TemplateSpec
 
 # a date, optionally followed by a time in the same word ("20/08/2026 11:04")
 DATE_WORD_RE = re.compile(r"^(\d{2}/\d{2}/\d{2,4})(?:\s+(\d{1,2}:\d{2}))?$")
@@ -49,16 +43,6 @@ AMOUNT_RE = re.compile(r"^[+-]?\s?(?:C|Rs\.?|INR|\u20b9)?\s?[\d,]+\.\d{2}$")
 CR_RE = re.compile(r"\bCR\b")
 DR_RE = re.compile(r"\bDR\b")
 
-TEMPLATES = {
-    "infinia": ["DATE & TIME", "TRANSACTION DESCRIPTION"],
-    "legacy": ["Transaction Date", "Amount"],
-}
-AMOUNT_LABELS = ("AMOUNT", "Amount")
-REWARDS_LABELS = ("REWARDS", "Rewards")
-# rows at or below the first of these end the transaction table
-FOOTER_ROW_RE = re.compile(
-    r"^(?:TRANSACTIONS TOTAL|Page \d+ of\b|Total Amount Due)"
-)
 LAST_ROW_MAX_HEIGHT = 24.0  # room for one wrapped description line
 Y_TOL = 4.0
 LABEL_SEARCH_BAND = 60.0  # how far below the DATE label the AMOUNT label may sit
@@ -71,11 +55,11 @@ DESC_JUNK_RE = re.compile(r"^[\[\]:,;.\s]*$|^\[?CKYC\b|^ID$")
 # classifier or pollute merchant names.
 EMI_TAG = "EMI"
 
-# Lines that are never transactions (legacy fallback path only).
-NOISE_LINE_RE = re.compile(
+# Lines that are never transactions (fallback path, and description-line
+# filtering). Header labels are injected from the registered specs below.
+_NON_SPEC_NOISE_RE = re.compile(
     r"^(?:"
-    r"Transaction Date|Posting Date|Description|Amount|Dr/Cr|CR/DR"
-    r"|DATE & TIME|TRANSACTION DESCRIPTION|REWARDS"
+    r"Dr/Cr|CR/DR"
     r"|Statement of [Aa]ccount"
     r"|Previous Balance|Opening Balance|Closing Balance|Total\b"
     r"|Reward Points?|Page \d+"
@@ -83,6 +67,22 @@ NOISE_LINE_RE = re.compile(
     r"|.*Terms and Conditions"
     r")"
 )
+
+
+def _build_noise_line_re() -> re.Pattern[str]:
+    """Compile the noise-line regex: spec header labels + generic markers."""
+    labels = sorted(
+        {label for spec in REGISTRY.values() for label in spec.noise_labels}
+    )
+    label_alt = "|".join(re.escape(label) for label in labels)
+    return re.compile(
+        rf"^(?:{label_alt}|{_NON_SPEC_NOISE_RE.pattern[4:-2]})"
+    )
+
+
+# Built once at import; every registered spec's noise labels are wired in
+# automatically - adding a template cannot leave noise lines unmatched.
+NOISE_LINE_RE = _build_noise_line_re()
 
 
 @dataclass
@@ -190,14 +190,18 @@ def extract_statement_from_doc(doc: "pymupdf.Document") -> ExtractedStatement:
     rejected: list[RawRow] = []
     ambiguous: list[RawRow] = []
     full_text = ""
+    detected: set[str] = set()
 
     for page in doc:
         full_text += page.get_text()
         words = _words_sorted(page)
         rows = cluster_rows(words)
-        header = _find_header(rows)
-        if header is not None:
-            page_rows, page_noise = _parse_column_page(words, rows, header)
+        spec, header = _find_page_header(rows)
+        if spec is not None and header is not None:
+            detected.add(spec.name)
+            page_rows, page_noise = _parse_column_page(
+                words, rows, header, spec
+            )
             txn_rows += page_rows
             rejected += page_noise
         else:
@@ -206,16 +210,12 @@ def extract_statement_from_doc(doc: "pymupdf.Document") -> ExtractedStatement:
             rejected += page_noise
             ambiguous += page_ambig
 
-    all_anchors = sorted({a for anchors in TEMPLATES.values() for a in anchors})
-    anchors_found = [a for a in all_anchors if a in full_text]
-    anchors_missing = [a for a in all_anchors if a not in full_text]
-    template = next(
-        (
-            name
-            for name, anchors in TEMPLATES.items()
-            if all(a in full_text for a in anchors)
-        ),
-        None,
+    # document-level template: the spec whose anchors all appear in the
+    # text (fallback pages still count toward detection via anchors)
+    template = _detect_document_template(full_text, detected)
+
+    all_anchors = sorted(
+        {a for spec in REGISTRY.values() for a in spec.anchors}
     )
     return ExtractedStatement(
         pages=doc.page_count,
@@ -223,9 +223,28 @@ def extract_statement_from_doc(doc: "pymupdf.Document") -> ExtractedStatement:
         rejected=rejected,
         ambiguous=ambiguous,
         template=template,
-        anchors_found=anchors_found,
-        anchors_missing=anchors_missing,
+        anchors_found=[a for a in all_anchors if a in full_text],
+        anchors_missing=[a for a in all_anchors if a not in full_text],
         full_text=full_text,
+    )
+
+
+def _detect_document_template(
+    full_text: str, page_detected: set[str]
+) -> str | None:
+    """Pick the document's template: pages that matched a header win;
+    otherwise the first spec whose anchors all appear in the text."""
+    if page_detected:
+        return next(iter(page_detected)) if len(page_detected) == 1 else (
+            f"mixed ({', '.join(sorted(page_detected))})"
+        )
+    return next(
+        (
+            spec.name
+            for spec in REGISTRY.values()
+            if all(a in full_text for a in spec.anchors)
+        ),
+        None,
     )
 
 
@@ -284,45 +303,64 @@ def _fold_lines(words: list[Word]) -> list[str]:
     return parts
 
 
-# ── column-aware parsing (infinia + legacy headers) ──────────────────────
+# ── column-aware parsing (spec-driven) ───────────────────────────────────
 
 
-def _find_header(rows: list[RawRow]) -> dict | None:
-    """Locate the table header and its column x-boundaries.
+def _find_page_header(
+    rows: list[RawRow],
+) -> tuple[TemplateSpec | None, dict | None]:
+    """Locate the table header for whichever registered spec matches.
 
-    Returns {"y": header row y, "amount_x": amount column start,
-    "rewards_x": rewards column start or None}, or None if the page has no
-    recognised header. The AMOUNT label may sit in the DATE label's row or
-    in a row up to LABEL_SEARCH_BAND below it (the Infinia template puts
-    "REWARDS AMOUNT PI" on a separate line from "DATE & TIME").
+    Returns (spec, {"y": header row y, "amount_x": amount column start,
+    "rewards_x": rewards column start or None}), or (None, None) if the
+    page has no recognised header. The amount/rewards labels may sit in
+    the date label's row or up to LABEL_SEARCH_BAND below it (the Infinia
+    template puts "REWARDS AMOUNT PI" on a separate line).
     """
-    for row in rows:
-        if not ("DATE & TIME" in row.text or "Transaction Date" in row.text):
-            continue
-        candidates = [row] + [r for r in rows if 0 < r.y - row.y <= LABEL_SEARCH_BAND]
-        for cand in candidates:
-            amount = [w for w in cand.words if w.text in AMOUNT_LABELS]
-            if not amount:
+    for spec in REGISTRY.values():
+        for row in rows:
+            if spec.date_label not in row.text:
                 continue
-            rewards = [w for w in cand.words if w.text in REWARDS_LABELS]
-            return {
-                "y": row.y,
-                "amount_x": min(w.x0 for w in amount),
-                "rewards_x": min((w.x0 for w in rewards), default=None),
-            }
-    return None
+            candidates = [row] + [
+                r for r in rows if 0 < r.y - row.y <= LABEL_SEARCH_BAND
+            ]
+            for cand in candidates:
+                amount = [
+                    w for w in cand.words if w.text in spec.amount_labels
+                ]
+                if not amount:
+                    continue
+                rewards = [
+                    w for w in cand.words if w.text in spec.rewards_labels
+                ]
+                return (
+                    spec,
+                    {
+                        "y": row.y,
+                        "amount_x": min(w.x0 for w in amount),
+                        "rewards_x": min(
+                            (w.x0 for w in rewards), default=None
+                        ),
+                    },
+                )
+    return None, None
 
 
-def _find_footer_y(rows: list[RawRow], header_y: float) -> float:
+def _find_footer_y(
+    rows: list[RawRow], header_y: float, spec: TemplateSpec
+) -> float:
     """Y of the first footer marker below the header, else +inf."""
     for row in rows:
-        if row.y > header_y + 8 and FOOTER_ROW_RE.match(row.text):
+        if row.y > header_y + 8 and spec.footer_re.match(row.text):
             return row.y - 6
     return float("inf")
 
 
 def _parse_column_page(
-    words: list[Word], rows: list[RawRow], header: dict
+    words: list[Word],
+    rows: list[RawRow],
+    header: dict,
+    spec: TemplateSpec,
 ) -> tuple[list[RawRow], list[RawRow]]:
     """Reconstruct transactions from one header'd page.
 
@@ -332,7 +370,7 @@ def _parse_column_page(
     consecutive dates, so wrapped description lines fold into the row
     above them.
     """
-    footer_y = _find_footer_y(rows, header["y"])
+    footer_y = _find_footer_y(rows, header["y"], spec)
     body_top = header["y"] + 8
     body = [w for w in words if body_top < w.y0 < footer_y]
 
